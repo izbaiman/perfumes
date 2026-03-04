@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Scentoire · AI Perfume Recommender</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background: #0d0808;
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      color: #e8ddd0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    /* Grain overlay */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none; z-index: 0;
+    }
+
+    /* Radial glow */
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      background: radial-gradient(ellipse 80% 55% at 50% 0%, #2a1515 0%, transparent 70%);
+      pointer-events: none; z-index: 0;
+    }
+
+    canvas#particles {
+      position: fixed; inset: 0;
+      width: 100%; height: 100%;
+      pointer-events: none; z-index: 1;
+    }
+
+    .card {
+      position: relative; z-index: 2;
+      width: 100%; max-width: 620px;
+      background: linear-gradient(160deg, #1a0f0f 0%, #130a0a 100%);
+      border: 1px solid #2e1e1e;
+      border-radius: 2px;
+      overflow: hidden;
+      box-shadow: 0 40px 120px rgba(0,0,0,0.85), inset 0 1px 0 rgba(201,168,76,0.12);
+      transition: opacity .3s ease, transform .3s ease;
+    }
+    .card.fade-out { opacity: 0; transform: translateY(10px); }
+
+    .top-bar {
+      height: 3px;
+      background: linear-gradient(90deg, #6b3a2a, #c9a84c, #6b3a2a);
+    }
+
+    .inner { padding: 44px 52px 52px; }
+
+    /* ── Typography ── */
+    .logo-text {
+      font-size: 10px; letter-spacing: 6px; color: #c9a84c;
+      text-transform: uppercase; margin-bottom: 8px; opacity: .8;
+    }
+    h1 { font-size: 42px; font-weight: 300; line-height: 1.1; color: #f0e8dc; margin-bottom: 16px; letter-spacing: -.5px; }
+    h2 { font-size: 28px; font-weight: 300; color: #f0e8dc; margin-bottom: 24px; line-height: 1.3; }
+    .subtitle {
+      font-size: 15px; line-height: 1.7; color: #9a8070;
+      margin-bottom: 36px; font-style: italic; font-weight: 300;
+    }
+
+    /* ── Badges row ── */
+    .badges { display: flex; gap: 32px; margin-bottom: 36px; }
+    .badge { font-size: 10px; letter-spacing: 3px; color: #c9a84c; text-transform: uppercase; }
+
+    /* ── Button ── */
+    .btn {
+      display: inline-block; padding: 13px 38px;
+      background: transparent; border: 1px solid #c9a84c;
+      color: #c9a84c; font-size: 11px; letter-spacing: 4px;
+      text-transform: uppercase; cursor: pointer;
+      transition: all .25s ease; font-family: inherit;
+    }
+    .btn:hover { background: rgba(201,168,76,.08); transform: translateY(-1px); }
+    .btn-ghost {
+      margin-top: 28px; background: none; border: none;
+      color: #6a5a50; font-size: 11px; letter-spacing: 3px;
+      text-transform: uppercase; cursor: pointer; font-family: inherit;
+      transition: color .2s;
+    }
+    .btn-ghost:hover { color: #9a8070; }
+
+    /* ── Progress ── */
+    .progress-wrap { height: 1px; background: #1e1212; margin-bottom: 36px; overflow: hidden; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg,#6b3a2a,#c9a84c); transition: width .5s ease; }
+
+    .q-num { font-size: 10px; letter-spacing: 4px; color: #c9a84c; margin-bottom: 20px; text-transform: uppercase; }
+    .q-text { font-size: 23px; font-weight: 300; line-height: 1.45; color: #f0e8dc; margin-bottom: 36px; }
+
+    /* ── Scale ── */
+    .scale-row { display: flex; gap: 10px; justify-content: center; margin-bottom: 10px; }
+    .scale-btn {
+      width: 50px; height: 50px; border: 1px solid #2e1e1e;
+      background: transparent; color: #6a5a50; font-size: 17px;
+      cursor: pointer; transition: all .2s; font-family: inherit;
+    }
+    .scale-btn:hover { border-color: #c9a84c; color: #c9a84c; }
+    .scale-btn.active { border-color: #c9a84c; background: rgba(201,168,76,.1); color: #c9a84c; }
+    .scale-labels { display: flex; justify-content: space-between; font-size: 10px; color: #6a5a50; letter-spacing: 1px; }
+
+    /* ── Choices ── */
+    .choice-grid { display: flex; flex-direction: column; gap: 10px; }
+    .choice-btn {
+      padding: 15px 20px; border: 1px solid #2e1e1e;
+      background: rgba(255,255,255,.01); color: #7a6a60;
+      font-size: 14px; cursor: pointer; transition: all .2s;
+      text-align: left; font-family: inherit; letter-spacing: .5px;
+    }
+    .choice-btn:hover { border-color: #6b3a2a; color: #c4b49e; }
+    .choice-btn.active { border-color: #c9a84c; background: rgba(201,168,76,.08); color: #e8ddd0; }
+
+    /* ── Loading ── */
+    .loading-wrap { text-align: center; padding: 56px 0; }
+    .orb {
+      width: 80px; height: 80px; border-radius: 50%;
+      background: radial-gradient(circle at 40% 40%, #c9a84c, #6b3a2a);
+      margin: 0 auto 28px;
+      animation: pulse 2s ease-in-out infinite;
+      box-shadow: 0 0 60px rgba(201,168,76,.3);
+    }
+    @keyframes pulse { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.09);opacity:.7} }
+    .loading-label { font-size: 10px; letter-spacing: 6px; color: #c9a84c; text-transform: uppercase; margin-bottom: 10px; }
+    .loading-sub { font-size: 15px; color: #7a6a60; font-style: italic; }
+
+    /* ── Results ── */
+    .summary-box {
+      padding: 20px 22px; background: rgba(201,168,76,.04);
+      border: 1px solid #2e1e1e; border-left: 3px solid #c9a84c;
+      margin-bottom: 28px; font-style: italic;
+      font-size: 16px; line-height: 1.75; color: #c4b49e;
+    }
+
+    .perf-card {
+      padding: 22px; border: 1px solid #2e1e1e;
+      background: rgba(255,255,255,.01);
+      cursor: pointer; transition: all .25s; margin-bottom: 10px;
+    }
+    .perf-card:hover { border-color: #6b3a2a; }
+    .perf-card.active { border-color: #c9a84c; background: rgba(201,168,76,.05); }
+
+    .card-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+    .card-emoji { font-size: 28px; margin-right: 12px; }
+    .perf-name { font-size: 18px; font-weight: 400; color: #f0e8dc; }
+    .perf-brand { font-size: 11px; letter-spacing: 2px; color: #9a8070; text-transform: uppercase; margin-top: 2px; }
+    .match-badge {
+      padding: 4px 12px; background: rgba(201,168,76,.12);
+      border: 1px solid rgba(201,168,76,.28); font-size: 11px;
+      letter-spacing: 2px; color: #c9a84c; white-space: nowrap;
+    }
+    .headline { font-size: 13px; font-style: italic; color: #c9a84c; margin-bottom: 8px; }
+
+    /* Stars */
+    .stars { display: flex; gap: 2px; align-items: center; }
+    .star-full, .star-half { color: #c9a84c; font-size: 13px; }
+    .star-empty { color: #3a3030; font-size: 13px; }
+    .rating-val { font-size: 11px; color: #9a8070; margin-left: 5px; }
+
+    /* Expanded detail */
+    .detail { margin-top: 16px; border-top: 1px solid #2e1e1e; padding-top: 16px; }
+    .detail p { font-size: 14px; line-height: 1.7; color: #b0a090; margin-bottom: 10px; }
+    .detail .journey { font-style: italic; color: #8a7a6a; }
+    .key-reason {
+      padding: 10px 14px; background: rgba(201,168,76,.06);
+      border-left: 2px solid #c9a84c; font-size: 12px;
+      color: #c9a84c; letter-spacing: .5px; margin-bottom: 12px;
+    }
+    .notes-text { font-size: 11px; color: #5a4a40; letter-spacing: 1px; margin-bottom: 8px; }
+    .accords { display: flex; gap: 6px; flex-wrap: wrap; }
+    .accord-tag {
+      padding: 3px 10px; border: 1px solid #2e1e1e;
+      font-size: 10px; letter-spacing: 2px; color: #7a6a60; text-transform: uppercase;
+    }
+
+    .error-msg { color: #c05050; margin-top: 14px; font-size: 13px; }
+
+    /* scrollbar */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: #0d0808; }
+    ::-webkit-scrollbar-thumb { background: #2e1e1e; }
+
+    @media(max-width:600px){ .inner{padding:32px 24px 40px;} h1{font-size:32px;} }
+  </style>
+</head>
+<body>
+
+<canvas id="particles"></canvas>
+
+<div class="card" id="card">
+  <div class="top-bar"></div>
+  <div class="inner" id="screen"></div>
+</div>
+
+<script>
+// ── Config ──────────────────────────────────────────────────────────────────
+// ML Backend URL — change if you deploy to a server
+const ML_BACKEND_URL = "http://localhost:8001";
+
+const QUESTIONS = [
+  { id:"energy",      text:"I prefer calm, quiet evenings over lively social gatherings.", type:"scale",  label_low:"Strongly Disagree", label_high:"Strongly Agree" },
+  { id:"nature",      text:"I feel most at peace when I'm surrounded by nature.",           type:"scale",  label_low:"Not at all",        label_high:"Absolutely" },
+  { id:"romance",     text:"I consider myself a romantic at heart.",                        type:"scale",  label_low:"Not really",        label_high:"Very much" },
+  { id:"adventurous", text:"I love trying new, unconventional things.",                     type:"scale",  label_low:"I prefer familiar", label_high:"I crave novelty" },
+  { id:"classic",     text:"I'm drawn to timeless elegance over trendy styles.",            type:"scale",  label_low:"I love trends",     label_high:"I love classics" },
+  { id:"warmth",      text:"I'm told I have a warm, welcoming presence.",                   type:"scale",  label_low:"I'm more reserved", label_high:"Deeply warm" },
+  { id:"bold",        text:"I like making a statement when I walk into a room.",            type:"scale",  label_low:"I prefer subtlety", label_high:"Bold presence" },
+  { id:"mood",    text:"How would you describe your current mood?",           type:"choice", options:["Energized & Upbeat","Calm & Reflective","Romantic & Dreamy","Mysterious & Intense"] },
+  { id:"season",  text:"Which season resonates most with your personality?", type:"choice", options:["Spring – Fresh & Hopeful","Summer – Warm & Vibrant","Autumn – Rich & Complex","Winter – Cool & Refined"] },
+  { id:"occasion",text:"What's your primary use for this fragrance?",        type:"choice", options:["Daily wear","Special occasions","Work & professional","Evening & nightlife"] },
+];
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let state = { screen:"intro", currentQ:0, answers:{}, results:null, selectedCard:0, error:null };
+
+// ── Particles ─────────────────────────────────────────────────────────────────
+(function initParticles(){
+  const canvas = document.getElementById("particles");
+  const ctx = canvas.getContext("2d");
+  function resize(){ canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+  resize(); window.addEventListener("resize", resize);
+  const P = Array.from({length:65}, () => ({
+    x: Math.random()*window.innerWidth, y: Math.random()*window.innerHeight,
+    r: Math.random()*1.4+.3, dx:(Math.random()-.5)*.28, dy:-Math.random()*.38-.1,
+    a: Math.random()*.45+.1
+  }));
+  (function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    P.forEach(p=>{
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+      ctx.fillStyle=`rgba(201,168,76,${p.a})`; ctx.fill();
+      p.x+=p.dx; p.y+=p.dy;
+      if(p.y<0){ p.y=canvas.height; p.x=Math.random()*canvas.width; }
+    });
+    requestAnimationFrame(draw);
+  })();
+})();
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function stars(rating){
+  const full=Math.floor(rating), half=rating%1>=.5?1:0, empty=5-full-half;
+  return `<div class="stars">
+    ${'<span class="star-full">★</span>'.repeat(full)}
+    ${half?'<span class="star-half">⯨</span>':''}
+    ${'<span class="star-empty">☆</span>'.repeat(empty)}
+    <span class="rating-val">${rating}</span>
+  </div>`;
+}
+
+function transition(fn){
+  const card = document.getElementById("card");
+  card.classList.add("fade-out");
+  setTimeout(()=>{ fn(); card.classList.remove("fade-out"); }, 280);
+}
+
+function render(){ renderScreen(state); }
+
+// ── Screens ───────────────────────────────────────────────────────────────────
+function renderScreen(s){
+  const el = document.getElementById("screen");
+  if(s.screen==="intro")   el.innerHTML = introHTML(s);
+  if(s.screen==="quiz")    el.innerHTML = quizHTML(s);
+  if(s.screen==="loading") el.innerHTML = loadingHTML();
+  if(s.screen==="results") el.innerHTML = resultsHTML(s);
+  attachHandlers(s);
+}
+
+function introHTML(s){ return `
+  <div class="logo-text">Scentoire · ML Powered</div>
+  <h1>Discover Your<br>Signature Scent</h1>
+  <p class="subtitle">Answer 10 questions about your personality and mood.<br>
+  Our trained ML model will reveal your olfactory soul.</p>
+  <div class="badges">
+    <span class="badge">10 Questions</span>
+    <span class="badge">ML Model</span>
+    <span class="badge">3 Matches</span>
+  </div>
+  <button class="btn" id="startBtn">Begin Your Journey</button>
+  ${s.error ? `<p class="error-msg">${s.error}</p>` : ''}
+`; }
+
+function quizHTML(s){
+  const q = QUESTIONS[s.currentQ];
+  const pct = (s.currentQ / QUESTIONS.length * 100).toFixed(1);
+  let inputHTML = '';
+  if(q.type==='scale'){
+    inputHTML = `
+      <div class="scale-row">
+        ${[1,2,3,4,5].map(v=>`
+          <button class="scale-btn ${s.answers[q.id]===v?'active':''}" data-val="${v}">${v}</button>
+        `).join('')}
+      </div>
+      <div class="scale-labels"><span>${q.label_low}</span><span>${q.label_high}</span></div>`;
+  } else {
+    inputHTML = `<div class="choice-grid">${q.options.map(opt=>`
+      <button class="choice-btn ${s.answers[q.id]===opt?'active':''}" data-val="${opt}">${opt}</button>
+    `).join('')}</div>`;
+  }
+  return `
+    <div class="progress-wrap"><div class="progress-fill" style="width:${pct}%"></div></div>
+    <div class="q-num">Question ${s.currentQ+1} of ${QUESTIONS.length}</div>
+    <p class="q-text">${q.text}</p>
+    ${inputHTML}
+    ${s.currentQ>0 ? '<button class="btn-ghost" id="backBtn">← Back</button>' : ''}
+  `;
+}
+
+function loadingHTML(){ return `
+  <div class="loading-wrap">
+    <div class="orb"></div>
+    <div class="loading-label">Analysing Your Profile</div>
+    <p class="loading-sub">Our ML model is finding your perfect scent…</p>
+  </div>
+`; }
+
+function resultsHTML(s){
+  const r = s.results;
+  const confPct = r.model_confidence ? Math.round(r.model_confidence * 100) : null;
+  const cards = r.recommendations.map((rec,i)=>{
+    const score = rec.match_score || 85;
+    const detail = s.selectedCard===i ? `
+      <div class="detail">
+        <p>${rec.personality_match}</p>
+        <p class="journey">${rec.scent_journey}</p>
+        <div class="key-reason">✦ ${rec.key_reason}</div>
+        <div class="notes-text">NOTES · ${rec.notes}</div>
+        <div class="accords">${rec.accords.map(a=>`<span class="accord-tag">${a}</span>`).join('')}</div>
+      </div>` : '';
+    return `
+      <div class="perf-card ${s.selectedCard===i?'active':''}" data-card="${i}">
+        <div class="card-head">
+          <div style="display:flex;align-items:center">
+            <span class="card-emoji">${rec.icon}</span>
+            <div>
+              <div class="perf-name">${rec.name}</div>
+              <div class="perf-brand">${rec.brand}</div>
+            </div>
+          </div>
+          <span class="match-badge">${score}% match</span>
+        </div>
+        <div class="headline">${rec.headline}</div>
+        ${stars(rec.rating)}
+        ${detail}
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="logo-text">Your Scent Profile ${confPct ? `· <span style="color:#c9a84c">${confPct}% model confidence</span>` : ''}</div>
+    <h2>Three Fragrances,<br>One Signature</h2>
+    <div class="summary-box">"${r.personality_summary}"</div>
+    ${cards}
+    <button class="btn" id="retakeBtn" style="margin-top:24px">Retake Quiz</button>
+  `;
+}
+
+// ── Handlers ──────────────────────────────────────────────────────────────────
+function attachHandlers(s){
+  const startBtn = document.getElementById("startBtn");
+  if(startBtn) startBtn.onclick = ()=> transition(()=>{ state.screen="quiz"; render(); });
+
+  document.querySelectorAll(".scale-btn").forEach(btn=>{
+    btn.onclick = ()=> handleAnswer(parseInt(btn.dataset.val));
+  });
+  document.querySelectorAll(".choice-btn").forEach(btn=>{
+    btn.onclick = ()=> handleAnswer(btn.dataset.val);
+  });
+
+  const backBtn = document.getElementById("backBtn");
+  if(backBtn) backBtn.onclick = ()=> transition(()=>{ state.currentQ--; render(); });
+
+  document.querySelectorAll(".perf-card").forEach(card=>{
+    card.onclick = ()=>{ state.selectedCard=parseInt(card.dataset.card); render(); };
+  });
+
+  const retakeBtn = document.getElementById("retakeBtn");
+  if(retakeBtn) retakeBtn.onclick = ()=> transition(()=>{
+    state = { screen:"intro", currentQ:0, answers:{}, results:null, selectedCard:0, error:null };
+    render();
+  });
+}
+
+function handleAnswer(val){
+  const q = QUESTIONS[state.currentQ];
+  state.answers[q.id] = val;
+  if(state.currentQ < QUESTIONS.length-1){
+    transition(()=>{ state.currentQ++; render(); });
+  } else {
+    fetchRecommendations();
+  }
+}
+
+// ── ML Backend Call ───────────────────────────────────────────────────────────
+async function fetchRecommendations(){
+  state.screen = "loading"; render();
+  try {
+    const res = await fetch(`${ML_BACKEND_URL}/recommend`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answers: state.answers })
+    });
+    if(!res.ok) throw new Error(`Server error: ${res.status}`);
+    state.results = await res.json();
+    state.screen  = "results";
+  } catch(e) {
+    state.error = `Could not reach ML backend at ${ML_BACKEND_URL}. Make sure app.py is running.`;
+    state.screen = "intro";
+  }
+  render();
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+render();
+</script>
+</body>
+</html>
